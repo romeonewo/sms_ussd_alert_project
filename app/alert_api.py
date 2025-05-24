@@ -1,44 +1,31 @@
-from fastapi import APIRouter, Request, Depends, Form
-from fastapi.responses import Response
-from twilio.twiml.messaging_response import MessagingResponse
-from sqlalchemy.ext.asyncio import AsyncSession
-from .database import get_db
-from .models import Alert
-from .utils import translate_message
+from fastapi import APIRouter, HTTPException
+from app.schemas import AlertCreate, AlertOut
+from app.models import Alert
+from app.database import get_db
+from app.twilio_client import send_sms
+from sqlalchemy.orm import Session
+from fastapi import Depends
+from typing import List
 
 router = APIRouter()
 
-@router.post("/sms")
-async def receive_sms(
-    request: Request,
-    From: str = Form(...),
-    Body: str = Form(...),
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    Handle incoming SMS from Twilio.
-    Parses the message, retrieves the latest alert in requested language,
-    and responds via TwiML.
-    """
-    user_lang = "en"
-    user_message = Body.strip().lower()
+@router.post("/alerts", response_model=AlertOut, status_code=201)
+def create_alert(alert: AlertCreate, db: Session = Depends(get_db)):
+    try:
+        new_alert = Alert(**alert.dict())
+        db.add(new_alert)
+        db.commit()
+        db.refresh(new_alert)
 
-    if "ewe" in user_message:
-        user_lang = "ee"
-    elif "twi" in user_message:
-        user_lang = "tw"
+        # Send SMS via Twilio
+        sms_result = send_sms(to=alert.phone_number, message=alert.message)
 
-    result = await db.execute(
-        f"SELECT * FROM alerts WHERE language = :lang ORDER BY created_at DESC LIMIT 1",
-        {"lang": user_lang}
-    )
-    latest_alert = result.fetchone()
+        return new_alert
 
-    if latest_alert:
-        alert_message = translate_message(latest_alert.message, user_lang)
-    else:
-        alert_message = translate_message("No alerts available", user_lang)
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
 
-    response = MessagingResponse()
-    response.message(alert_message)
-    return Response(content=str(response), media_type="application/xml")
+@router.get("/alerts", response_model=List[AlertOut])
+def get_alerts(db: Session = Depends(get_db)):
+    return db.query(Alert).all()

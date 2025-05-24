@@ -1,44 +1,19 @@
-from fastapi import APIRouter, Request, Depends, Form
-from fastapi.responses import Response
-from twilio.twiml.messaging_response import MessagingResponse
-from sqlalchemy.ext.asyncio import AsyncSession
-from .database import get_db
-from .models import Alert
-from .utils import translate_message
+from twilio.rest import Client
+from app.config import TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER
 
-router = APIRouter()
+client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
-@router.post("/sms")
-async def receive_sms(
-    request: Request,
-    From: str = Form(...),
-    Body: str = Form(...),
-    db: AsyncSession = Depends(get_db)
-):
+def send_sms(to: str, message: str) -> dict:
     """
-    Handle incoming SMS from Twilio.
-    Parses the message, retrieves the latest alert in requested language,
-    and responds via TwiML.
+    Send an SMS using Twilio
     """
-    user_lang = "en"
-    user_message = Body.strip().lower()
-
-    if "ewe" in user_message:
-        user_lang = "ee"
-    elif "twi" in user_message:
-        user_lang = "tw"
-
-    result = await db.execute(
-        f"SELECT * FROM alerts WHERE language = :lang ORDER BY created_at DESC LIMIT 1",
-        {"lang": user_lang}
+    sms = client.messages.create(
+        body=message,
+        from_=TWILIO_PHONE_NUMBER,
+        to=to
     )
-    latest_alert = result.fetchone()
-
-    if latest_alert:
-        alert_message = translate_message(latest_alert.message, user_lang)
-    else:
-        alert_message = translate_message("No alerts available", user_lang)
-
-    response = MessagingResponse()
-    response.message(alert_message)
-    return Response(content=str(response), media_type="application/xml")
+    return {
+        "sid": sms.sid,
+        "status": sms.status,
+        "to": sms.to
+    }
