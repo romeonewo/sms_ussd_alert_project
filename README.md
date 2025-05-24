@@ -23,8 +23,6 @@ sms_ussd_alert_project/
 ├── requirements.txt            # Python dependencies (FastAPI, Twilio, SQLAlchemy...)
 ├── README.md                   # Project overview and setup instructions
 ├── .env                       # Environment variables (Twilio keys, DB credentials)
-├── docker-compose.yml          # Optional: Docker setup for app + PostgreSQL
-├── Dockerfile                  # Optional: Containerize the FastAPI app
 └── scripts/
     └── setup_db.py             # Optional: Script to initialize DB schema
 
